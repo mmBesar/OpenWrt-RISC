@@ -48,7 +48,16 @@ jobs:
           CONFIG_PACKAGE_luci-theme-openwrt-2020=y
           EOF
 
-      - name: Configure (auto-selects spacemit/generic/xunlong_orangepi-rv2)
+      - name: Explicitly select target/subtarget/device (don't rely on defconfig auto-selection — already proved wrong once)
+        working-directory: openwrt
+        run: |
+          cat >> .config << 'EOF'
+          CONFIG_TARGET_spacemit=y
+          CONFIG_TARGET_spacemit_generic=y
+          CONFIG_TARGET_spacemit_generic_DEVICE_xunlong_orangepi-rv2=y
+          EOF
+
+      - name: Configure
         working-directory: openwrt
         run: make defconfig
 
@@ -56,7 +65,11 @@ jobs:
         working-directory: openwrt
         run: |
           grep -q "CONFIG_TARGET_spacemit=y" .config || { echo "spacemit target not selected!"; exit 1; }
-          grep "xunlong_orangepi.rv2" .config || { echo "RV2 device not selected in .config!"; exit 1; }
+          if ! grep -q "DEVICE_xunlong_orangepi.rv2=y" .config; then
+            echo "Device symbol not selected as expected. Searching .config for what's actually there:"
+            grep -i "orangepi\|spacemit" .config || echo "(nothing matching found at all)"
+            exit 1
+          fi
 
       - name: Build
         working-directory: openwrt
