@@ -1,0 +1,109 @@
+name: Build OpenWrt RV2 with LuCI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      # ------------------------------------------------------------
+      # Checkout YOUR fork
+      # ------------------------------------------------------------
+      - name: Checkout OpenWrt-RISC
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------
+      # Build dependencies
+      # ------------------------------------------------------------
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            g++ \
+            gawk \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            rsync \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            swig \
+            time
+
+      # ------------------------------------------------------------
+      # Clone OpenWrt main
+      # ------------------------------------------------------------
+      - name: Clone OpenWrt
+        run: |
+          git clone https://git.openwrt.org/openwrt/openwrt.git openwrt
+
+      # ------------------------------------------------------------
+      # Drop OUR fork's SpacemiT target into OpenWrt
+      # ------------------------------------------------------------
+      - name: Add SpacemiT target
+        run: |
+          cp -a \
+            target/linux/spacemit \
+            openwrt/target/linux/
+
+      # ------------------------------------------------------------
+      # Update and install feeds
+      # ------------------------------------------------------------
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      # ------------------------------------------------------------
+      # Add LuCI
+      # Same commands as the README
+      # ------------------------------------------------------------
+      - name: Add LuCI
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds install luci
+
+          echo 'CONFIG_PACKAGE_luci=y' >> .config
+          echo 'CONFIG_PACKAGE_luci-theme-material=y' >> .config
+          echo 'CONFIG_PACKAGE_luci-theme-openwrt-2020=y' >> .config
+
+      # ------------------------------------------------------------
+      # Select RV2 target + resolve configuration
+      # ------------------------------------------------------------
+      - name: Configure
+        working-directory: openwrt
+        run: |
+          make defconfig
+
+      # ------------------------------------------------------------
+      # Build
+      # ------------------------------------------------------------
+      - name: Build
+        working-directory: openwrt
+        run: |
+          make -j"$(nproc)"
+
+      # ------------------------------------------------------------
+      # Upload firmware
+      # ------------------------------------------------------------
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-rv2-luci
+          path: |
+            openwrt/bin/targets/spacemit/generic/*.img.gz
+            openwrt/bin/targets/spacemit/generic/*.manifest
+            openwrt/bin/targets/spacemit/generic/*.sha256sums
+          if-no-files-found: error
+          retention-days: 14
