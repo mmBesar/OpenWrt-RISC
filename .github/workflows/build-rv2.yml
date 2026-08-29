@@ -8,15 +8,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      # ------------------------------------------------------------
-      # Checkout YOUR fork
-      # ------------------------------------------------------------
-      - name: Checkout OpenWrt-RISC
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------
-      # Build dependencies
-      # ------------------------------------------------------------
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -40,70 +34,55 @@ jobs:
             swig \
             time
 
-      # ------------------------------------------------------------
-      # Clone OpenWrt main
-      # ------------------------------------------------------------
       - name: Clone OpenWrt
         run: |
           git clone https://git.openwrt.org/openwrt/openwrt.git openwrt
 
-      # ------------------------------------------------------------
-      # Drop OUR fork's SpacemiT target into OpenWrt
-      # ------------------------------------------------------------
-      - name: Add SpacemiT target
+      - name: Add RV2 target
         run: |
-          cp -a \
-            target/linux/spacemit \
-            openwrt/target/linux/
+          cp -a target/linux/spacemit openwrt/target/linux/
 
-      # ------------------------------------------------------------
-      # Update and install feeds
-      # ------------------------------------------------------------
       - name: Update feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ------------------------------------------------------------
-      # Add LuCI
-      # Same commands as the README
-      # ------------------------------------------------------------
       - name: Add LuCI
         working-directory: openwrt
         run: |
           ./scripts/feeds install luci
-
           echo 'CONFIG_PACKAGE_luci=y' >> .config
           echo 'CONFIG_PACKAGE_luci-theme-material=y' >> .config
           echo 'CONFIG_PACKAGE_luci-theme-openwrt-2020=y' >> .config
 
-      # ------------------------------------------------------------
-      # Select RV2 target + resolve configuration
-      # ------------------------------------------------------------
       - name: Configure
         working-directory: openwrt
         run: |
           make defconfig
 
-      # ------------------------------------------------------------
-      # Build
-      # ------------------------------------------------------------
       - name: Build
         working-directory: openwrt
         run: |
           make -j"$(nproc)"
 
-      # ------------------------------------------------------------
-      # Upload firmware
-      # ------------------------------------------------------------
-      - name: Upload firmware
+      - name: Verify RV2 images
+        working-directory: openwrt
+        run: |
+          test -f bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2-squashfs-sdcard.img.gz
+          test -f bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2-ext4-sdcard.img.gz
+
+          ls -lh bin/targets/spacemit/generic/
+
+      - name: Upload RV2 images
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-rv2-luci
           path: |
-            openwrt/bin/targets/spacemit/generic/*.img.gz
-            openwrt/bin/targets/spacemit/generic/*.manifest
+            openwrt/bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2-squashfs-sdcard.img.gz
+            openwrt/bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2-ext4-sdcard.img.gz
+            openwrt/bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2.manifest
             openwrt/bin/targets/spacemit/generic/*.sha256sums
           if-no-files-found: error
           retention-days: 14
+          
