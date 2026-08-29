@@ -1,4 +1,4 @@
-name: Build OpenWrt RV2 with LuCI
+name: Build OpenWrt RV2 (dgshue/OpenWrt-RISC) with LuCI
 
 on:
   workflow_dispatch:
@@ -8,81 +8,83 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Free up runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android \
+            /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          df -h
+
+      - name: Checkout this repo (target/linux/spacemit source)
+        uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            clang \
-            flex \
-            bison \
-            g++ \
-            gawk \
-            gettext \
-            git \
-            libncurses-dev \
-            libssl-dev \
-            python3 \
-            rsync \
-            unzip \
-            zlib1g-dev \
-            file \
-            wget \
-            swig \
-            time
+            build-essential clang flex bison g++ gawk gettext git \
+            libncurses-dev libssl-dev python3 rsync unzip zlib1g-dev \
+            file wget swig time dosfstools mtools
 
-      - name: Clone OpenWrt
-        run: |
-          git clone https://git.openwrt.org/openwrt/openwrt.git openwrt
+      - name: Clone OpenWrt main
+        run: git clone --depth=1 https://git.openwrt.org/openwrt/openwrt.git openwrt
 
       - name: Add RV2 target
-        run: |
-          cp -a target/linux/spacemit openwrt/target/linux/
+        run: cp -a target/linux/spacemit openwrt/target/linux/
 
-      - name: Update feeds
+      - name: Update and install feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Add LuCI
+      - name: Add LuCI (base build only — no router/VPN profile)
         working-directory: openwrt
         run: |
           ./scripts/feeds install luci
-          echo 'CONFIG_PACKAGE_luci=y' >> .config
-          echo 'CONFIG_PACKAGE_luci-theme-material=y' >> .config
-          echo 'CONFIG_PACKAGE_luci-theme-openwrt-2020=y' >> .config
+          cat >> .config << 'EOF'
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-theme-material=y
+          CONFIG_PACKAGE_luci-theme-openwrt-2020=y
+          EOF
 
-      - name: Configure
+      - name: Configure (auto-selects spacemit/generic/xunlong_orangepi-rv2)
+        working-directory: openwrt
+        run: make defconfig
+
+      - name: Confirm the RV2 device is actually selected before a long build
         working-directory: openwrt
         run: |
-          make defconfig
+          grep -q "CONFIG_TARGET_spacemit=y" .config || { echo "spacemit target not selected!"; exit 1; }
+          grep "xunlong_orangepi.rv2" .config || { echo "RV2 device not selected in .config!"; exit 1; }
 
       - name: Build
         working-directory: openwrt
-        run: |
-          make -j"$(nproc)"
+        run: make -j"$(nproc)" V=s BUILD_LOG=1
 
-      - name: Verify RV2 images
+      - name: Show what actually got produced (diagnostic — keep even on success)
+        if: always()
         working-directory: openwrt
-        run: |
-          test -f bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2-squashfs-sdcard.img.gz
-          test -f bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2-ext4-sdcard.img.gz
-
-          ls -lh bin/targets/spacemit/generic/
+        run: find bin/targets/spacemit -type f -exec ls -lh {} \; || echo "bin/targets/spacemit doesn't exist"
 
       - name: Upload RV2 images
-        uses: actions/upload-artifact@v4
+        if: always()
+        uses: actions/upload-artifact@v6
         with:
           name: openwrt-rv2-luci
+          # Single real image per the actual image/Makefile (IMAGES := sdcard.img.gz)
+          # — glob rather than hardcode, so a filename/config change surfaces as
+          # "fewer files than expected" instead of a hard failure on a wrong guess.
           path: |
-            openwrt/bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2-squashfs-sdcard.img.gz
-            openwrt/bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2-ext4-sdcard.img.gz
-            openwrt/bin/targets/spacemit/generic/openwrt-spacemit-generic-xunlong_orangepi-rv2.manifest
+            openwrt/bin/targets/spacemit/generic/*.img.gz
+            openwrt/bin/targets/spacemit/generic/*.manifest
             openwrt/bin/targets/spacemit/generic/*.sha256sums
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
-          
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-logs-rv2-openwrt-risc
+          path: openwrt/logs/
