@@ -32,6 +32,28 @@ jobs:
       - name: Add RV2 target
         run: cp -a target/linux/spacemit openwrt/target/linux/
 
+      - name: Trim patch 0001 to only the files RV2 actually needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchutils
+          PATCH="openwrt/target/linux/spacemit/patches-6.18/0001-riscv-dts-spacemit-backport-k1-board-enablement-from.patch"
+          # This patch also touches k1-bananapi-f3.dts and k1-milkv-jupiter.dts,
+          # unrelated to RV2/R2S — those have drifted against current OpenWrt
+          # main and fail to apply. Keep only the 3 files RV2 needs.
+          filterdiff \
+            --include='*k1.dtsi' \
+            --include='*k1-pinctrl.dtsi' \
+            --include='*k1-orangepi-rv2.dts' \
+            "$PATCH" > "$PATCH.trimmed"
+          mv "$PATCH.trimmed" "$PATCH"
+          echo "--- Trimmed patch now touches only: ---"
+          grep "^+++ " "$PATCH"
+          COUNT=$(grep -c "^+++ " "$PATCH")
+          if [ "$COUNT" -ne 3 ]; then
+            echo "ERROR: expected exactly 3 files in the trimmed patch, got $COUNT" >&2
+            exit 1
+          fi
+
       - name: Update and install feeds
         working-directory: openwrt
         run: |
