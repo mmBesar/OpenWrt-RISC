@@ -30,7 +30,12 @@ jobs:
         run: git clone --depth=1 https://git.openwrt.org/openwrt/openwrt.git openwrt
 
       - name: Add RV2 target
-        run: cp -a target/linux/spacemit openwrt/target/linux/
+        run: |
+          cp -a target/linux/spacemit openwrt/target/linux/
+          # gen_spacemit_sdcard_img.sh isn't executable in the source repo —
+          # the image-generation step calls it directly (./gen_spacemit_sdcard_img.sh),
+          # which fails with "Permission denied" (Error 126) without this.
+          chmod +x openwrt/target/linux/spacemit/image/gen_spacemit_sdcard_img.sh
 
       - name: Trim patch 0001 to only the files RV2 actually needs
         run: |
